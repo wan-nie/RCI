@@ -1,0 +1,14 @@
+__pycache__
+.idea
+.ipynb_checkpoints
+*.ipynb
+
+tmp/
+.vscode/
+*.out
+
+result/*
+!result/.gitkeep
+
+packages/*
+!packages/.gitkeep

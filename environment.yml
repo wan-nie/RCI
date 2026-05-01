@@ -1,0 +1,18 @@
+name: rci
+channels:
+  - defaults
+dependencies:
+  - python=3.12
+  - pip
+  - pip:
+    - jax[cuda12]==0.8.0
+    - flax
+    - orbax
+    - torch==2.8.0
+    - pyscf
+    - pandas
+    - matplotlib
+    - numpy
+    - scipy
+    - scikit-learn
+    - jupyterlab
