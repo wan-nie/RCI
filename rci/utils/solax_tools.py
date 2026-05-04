@@ -1,3 +1,5 @@
+# Utility functions for second-quantization calculations using the SOLAX library.
+# source: https://zenodo.org/records/14740476
 from itertools import combinations
 from itertools import product
 import solax as sx

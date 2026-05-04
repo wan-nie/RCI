@@ -4,7 +4,7 @@
 ![JAX](https://img.shields.io/badge/JAX-0.8+-A8192C?style=flat-square)
 ![PyTorch](https://img.shields.io/badge/PyTorch-2.8+-EE4C2C?style=flat-square&logo=pytorch&logoColor=white)
 
-**RCI** combines Learning to Rank (LTR) techniques with Selected Configuration Interaction (SCI) to accelerate the selection of important determinants.
+Ranking configuration interaction (RCI) combines Learning to Rank (LTR) techniques with selected configuration interaction (SCI) to accelerate the selection of important determinants.
 
 
 # Requirements
@@ -44,7 +44,7 @@ The script clones each repository into `packages/` and builds them with OpenMP +
 Precomputed one- and two-electron integrals are provided in `data/`, covering:
 
 - Small molecules in Gaussian basis: N2, C2, H2O, and NH3
-- Transition metal complex: Fe2S2 FCIDUMP files (sourced from [Active-space-model-for-Iron-Sulfur-Clusters](https://github.com/zhendongli2008/Active-space-model-for-Iron-Sulfur-Clusters))
+- Transition metal complex: [2Fe-2S] FCIDUMP files (sourced from [Active-space-model-for-Iron-Sulfur-Clusters](https://github.com/zhendongli2008/Active-space-model-for-Iron-Sulfur-Clusters))
   
 The electron integrals in the PAW basis used in this work are publicly available for download via [Zenodo](https://zenodo.org/records/14740476).
 

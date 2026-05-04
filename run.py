@@ -47,7 +47,8 @@ def setup_hybrid_ddp() -> Tuple[int, int, int, torch.device]:
 
     gloo_group = dist.new_group(
         ranks=list(range(world_size)),
-        backend="gloo"
+        backend="gloo",
+        timeout=timedelta(days=TIMEOUT_DAYS)
     )
 
     # --- JAX ---
