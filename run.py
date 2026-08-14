@@ -118,7 +118,8 @@ class Trainer:
     def train(self, x_train, y_train_np, x_rand, y_rand_np, n_sel, optimizer, iter_out_dir, seed):
         sampler_seed = seed + self.rank
         
-        num_bins = 64
+        num_bins = int(min(64, len(y_train_np) * 0.2 / 10))  # each bin covers at least 50 SDs
+        printr('Pair Sampler Bins:', num_bins)
         sampler = BlockWeightedPairSampler(y_train_np, num_bins=num_bins, seed=sampler_seed)
         
         best_spearman = -float('inf')
@@ -290,6 +291,7 @@ def parse_args():
     parser.add_argument('--N_orb', type=int, help='Number of orbitals')
     parser.add_argument('--impt_expand', type=float, help='Importance expansion factor gamma')
     parser.add_argument('--max_impt_frac', type=float, default=0.2)
+    parser.add_argument('--extend_thd', type=float, default=2e-2)
     parser.add_argument('--diag_of', type=str, default='solax', choices=['solax', 'clic', 'davidson'])
 
     # Continue iteration if applicable
@@ -319,7 +321,9 @@ def main():
     mol_name = args.mol_name
     if mol_name in ['N2', 'CO']: N_el = 10
     elif mol_name in ['NH3', 'H2O', 'C2']: N_el = 8
+    elif mol_name == 'Cr2': N_el = 48
     elif mol_name == 'Fe2S2': N_el = 30
+    elif mol_name == 'BeH2': N_el = 6
     else: raise Exception(f'Unknown molecule {mol_name}')
     
     N_orb = args.N_orb
@@ -344,7 +348,7 @@ def main():
             rand_keys=rand_keys
         )
         H = qcsolver.H
-        O_ext = tools.chop(H, 2e-2)
+        O_ext = tools.chop(H, args.extend_thd)
         print(f"""\
             Length of operators:
             H : {tools.full_len(H)}
@@ -442,6 +446,9 @@ def main():
             #
             target_num        = int(np.sqrt(len(basis_pool)) * 50)
             impt_frac         = target_num / len(basis_pool)
+            if mol_name == 'BeH2':
+                impt_frac = min(impt_frac, args.max_impt_frac)  # for rand_frac < 1
+                
             impt_frac_expand       = max(
                 impt_frac,
                 min(args.max_impt_frac, impt_frac * (args.impt_expand ** i))
@@ -452,7 +459,7 @@ def main():
             random_frac = impt_frac * 2/1.5
             train_sample_size = int(random_frac * len(basis_pool))
             printr(f"Rand sample:\t\t{train_sample_size}")
-            printr(f"rand_frac:\t\t{random_frac}")
+            printr(f"Rand frac:\t\t{random_frac}")
             
             rand_train_basis = random_sample_basis(basis_pool, train_sample_size)
             basis_for_diag = basis_core + rand_train_basis
@@ -553,8 +560,9 @@ def main():
             print(f"Corr energy (before chopping):\t\t{Es[0] - E_HF}")
             
             # chop false positive
-            final_state_chop = sx.State(basis_for_diag, Vs[:, 0]) % basis_core
-            final_state_prim = sx.State(basis_for_diag, Vs[:, 0]) % (basis_for_diag % basis_core)
+            before_state = sx.State(basis_for_diag, Vs[:, 0])
+            final_state_chop = before_state % basis_core
+            final_state_prim = before_state % (basis_for_diag % basis_core)
             final_state = (final_state_prim + final_state_chop.chop(abs_coeff_cut)).normalize()
             
             # print info of selected
@@ -577,7 +585,8 @@ def main():
             else:
                 pre_data = [final_state.basis, final_state.coeffs]
                 Es, Vs, hm = qcsolver.get_roots(final_state.basis, pre_data=pre_data)
-                
+            
+            final_state.coeffs = Vs[:, 0]
             print(f'Corr energy (after chopping):\t\t{Es[0] - E_HF}')
 
             # update
@@ -587,9 +596,11 @@ def main():
 
             # save results
             to_be_saved = dict(
+                before_state=before_state,
                 final_state=final_state,
                 selected=basis_selected,
-                pool=basis_pool
+                pool=basis_pool,
+                rand=rand_train_basis
             )
 
             sx.save(to_be_saved, os.path.join(iter_out_dir, 'basis'))

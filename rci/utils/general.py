@@ -28,6 +28,10 @@ class QCSolver:
 
         if diag_of != 'solax':
             self._prepare_clic()
+
+        # trimci warm-start cache
+        # (alpha, beta, coeffs) of the last of='trimci' solve; coeffs is (N, n_states).
+        self._trimci_warm = None
     
     @classmethod
     def build(cls, integral_dir, integral_path,
@@ -131,17 +135,26 @@ class QCSolver:
         beta_indices.sort(axis=1)
 
         # generate qc basis
+        def bs(occs):
+            s = 0
+            for k in occs:
+                s |= (1 << k)
+            return s
+    
         basis = []
+        alpha_beta = []
         for i in range(len(bits)):
             basis.append(
                 qc.SlaterDeterminant(self.N_orb, alpha_indices[i], beta_indices[i])
             )
+            alpha_beta.append([bs(alpha_indices[i]), bs(beta_indices[i])])
         
-        return basis
+        alpha_beta = np.array(alpha_beta, dtype=np.uint64)
+        return basis, alpha_beta
     
     def shrink_basis_clic(self, basis, basis_sub, hm):
-        basis = self._solax_to_qc(basis)
-        basis_sub = self._solax_to_qc(basis_sub)
+        basis, _ = self._solax_to_qc(basis)
+        basis_sub, _ = self._solax_to_qc(basis_sub)
     
         # basis -> index mapping
         index_map = {b: i for i, b in enumerate(basis)}
@@ -166,13 +179,14 @@ class QCSolver:
         basis_diag = [basis[i] for i in idx_diag]
 
         hm = clic.get_ham(basis_diag, self.h_so, self.eri_so, tables=self.tables)
+        hm = hm.real
         _, vecs = clic.diagH(hm, num_roots=1, option='arpack')
 
         v_diag = np.asarray(vecs.real[:, 0], dtype=np.float64)
         x0[idx_diag] = v_diag
 
         if pre_data is not None:
-            basis_pre = self._solax_to_qc(pre_data[0])
+            basis_pre, _ = self._solax_to_qc(pre_data[0])
             v_pre = pre_data[1].reshape(-1)
 
             x0_pre = np.zeros(dim, dtype=np.float64)
@@ -198,9 +212,11 @@ class QCSolver:
 
         return x0
 
-    def get_roots(self, basis, basis_base=None, hm_base=None, pre_data=None):
+    def get_roots(self, basis, basis_base=None, hm_base=None, pre_data=None, diag_of=None):
+        if diag_of is None:
+            diag_of = self.diag_of
         
-        if self.diag_of == 'solax':
+        if diag_of == 'solax':
             H_half = self.H_half
             batch_sizes = self.batch_sizes
             rand_keys = self.rand_keys
@@ -215,15 +231,16 @@ class QCSolver:
 
             return evals, evecs, hm
             
-        elif self.diag_of == 'clic':
-            basis_clic = self._solax_to_qc(basis)
+        elif diag_of == 'clic':
+            basis_clic, _ = self._solax_to_qc(basis)
             hm = clic.get_ham(basis_clic, self.h_so, self.eri_so, tables=self.tables)
+            hm = hm.real
             evals, evecs = clic.diagH(hm, num_roots=1, option="arpack")
             
-            return evals, evecs.real, hm.real
+            return evals, evecs.real, hm
         
-        elif self.diag_of == 'davidson':
-            basis_clic = self._solax_to_qc(basis)
+        elif diag_of == 'davidson':
+            basis_clic, _ = self._solax_to_qc(basis)
             sd = basis_clic[0]
             nelec = (len(sd.alpha_occupied_indices()), len(sd.beta_occupied_indices()))
             solver = SelectedCISolver(basis_clic, self.h_mo, self.eri_mo_chem, self.N_orb, nelec)
@@ -237,6 +254,73 @@ class QCSolver:
 
             return evals, evecs, None
 
+        elif diag_of == 'trimci':
+            from trimci import trimci_core
+            fe = trimci_core.fast_expansion
+
+            # (N, 2) -> 1-D alpha/beta
+            _, alpha_beta = self._solax_to_qc(basis)
+            alpha = np.ascontiguousarray(alpha_beta[:, 0], dtype=np.uint64)
+            beta  = np.ascontiguousarray(alpha_beta[:, 1], dtype=np.uint64)
+            N = len(basis)
+
+            # chemist (ij|kl), flattened n_orb^4
+            h1  = np.ascontiguousarray(self.h_mo, dtype=np.float64)
+            eri = np.ascontiguousarray(self.eri_mo_chem, dtype=np.float64).ravel()
+
+            diag = fe.compute_diagonals(alpha, beta, h1, eri, self.N_orb)
+
+            params = fe.DavidsonParams()
+            params.n_states = 1
+            params.max_subspace = 60
+
+            def map_coeffs_to_basis(src_alpha, src_beta, src_v, alpha, beta):
+                """Map coefficients from a source det list onto (alpha, beta) by det identity.
+                
+                hit -> old coeff, miss -> 0, then per-row normalize. 
+                src_v may be (N_src,) or (N_src, n). N_src: number of SDs, n: number of roots
+                Returns (n, N) guess array, or None if every row is zero.
+                """
+                key = {(int(a), int(b)): i for i, (a, b) in enumerate(zip(alpha, beta))}
+                N_before = src_alpha.shape[0]
+                N = alpha.shape[0]
+                src_v = np.asarray(src_v).real
+                if src_v.ndim == 1:
+                    src_v = src_v[:, None]  # (N, 1)
+                
+                #
+                n = src_v.shape[1]  # num roots
+                out = np.zeros((n, N), dtype=np.float64)
+                for i in range(N_before):
+                    idx = key.get((int(src_alpha[i]), int(src_beta[i])))
+                    if idx is not None:
+                        out[:, idx] = src_v[i]
+                rows = [out[s] / np.linalg.norm(out[s])
+                        for s in range(n) if np.linalg.norm(out[s]) > 1e-14]
+                
+                return np.asarray(rows, dtype=np.float64) if rows else None
+    
+            guess = np.zeros((0,), dtype=np.float64)
+            if self._trimci_warm is not None:
+                pa, pb, pc = self._trimci_warm
+                g = map_coeffs_to_basis(pa, pb, pc, alpha, beta)
+                if g is not None:
+                    guess = g[:1]
+
+            if guess.size == 0 and N > 0:
+                x0 = np.zeros(N, dtype=np.float64)
+                x0[int(np.argmin(diag))] = 1.0
+                guess = x0.reshape(1, N)
+
+            # solve
+            res = fe.davidson_solve_matfree(alpha, beta, h1, eri, self.N_orb, params, guess)
+            evals = np.asarray(res.eigenvalues, dtype=np.float64)
+            evecs = np.asarray(res.eigenvectors, dtype=np.float64).T  # (N, n_states)
+
+            # cache for next iteration's warm start
+            self._trimci_warm = (alpha, beta, evecs)
+
+            return evals, evecs, None
 
 def basis_to_array(basis):
     x = []

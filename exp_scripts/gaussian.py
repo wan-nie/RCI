@@ -1,6 +1,5 @@
 import os
 import subprocess
-import sys
 import time
 import argparse
 
@@ -62,6 +61,7 @@ def main():
         print(f"Starting job {idx+1}/{len(mol_names)} for {mol} with {N_orb} orbitals (port={current_port})...")
         print(f"{'='*60}")
         
+        # build cmd
         cmd = [
             'torchrun',
             '--nproc_per_node', str(num_gpus),
