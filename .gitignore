@@ -10,5 +10,3 @@ tmp/
 result/*
 !result/.gitkeep
 
-packages/*
-!packages/.gitkeep

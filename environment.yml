@@ -16,4 +16,5 @@ dependencies:
     - scipy
     - scikit-learn
     - jupyterlab
+    - pydantic
     - trimci

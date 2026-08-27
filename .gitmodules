@@ -1,0 +1,12 @@
+[submodule "packages/SOLAX"]
+	path = packages/SOLAX
+	url = https://github.com/pavlobilous/SOLAX.git
+	ignore = dirty
+[submodule "packages/clic"]
+	path = packages/clic
+	url = https://github.com/bslhrzg/clic.git
+	ignore = dirty
+[submodule "packages/clic_clib"]
+	path = packages/clic_clib
+	url = https://github.com/bslhrzg/clic_clib.git
+	ignore = dirty

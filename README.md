@@ -27,14 +27,12 @@ conda activate rci
 
 ## Step 2 — Install Local Packages
 
-[SOLAX](https://github.com/pavlobilous/SOLAX) and [clic](https://github.com/bslhrzg/clic) are required for QM calculations on CUDA or CPU. 
-These packages are not yet available on PyPI, so a dedicated script is provided:
+[SOLAX](https://github.com/pavlobilous/SOLAX) and [clic](https://github.com/bslhrzg/clic) are required for QM calculations on CPU or CUDA-enabled systems.
+These packages are managed as Git submodules and are pinned to tested commits by this repository. Install them with:
 
 ```bash
 bash install_local_pkgs.sh
 ```
-
-The script clones each repository into `packages/` and builds them with OpenMP + O3 optimizations. It is re-run safe: any package whose source directory already exists will be skipped automatically. To force a reinstall, remove the corresponding directory and re-run.
 
 
 # Usage
